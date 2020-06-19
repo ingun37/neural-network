@@ -42,9 +42,10 @@ sigmoid x = 1/(1+ exp (-x))
 
 activate = (map sigmoid) .* affineT
 
--- derivative of sigmoid
+-- |Derivative of sigmoid.
 sigmoid' :: Double -> Double
-sigmoid' x = sigmoid x * (1 - sigmoid x)
+sigmoid' x = let s = sigmoid x
+             in s * (1 - s)
 
 feedforward :: NRInput-> NRNetwork -> NROutput 
 feedforward = foldr activate
@@ -54,12 +55,13 @@ expectation samples = (sum samples) / (fromIntegral $ length samples)
 
 gradF :: NRNetwork -> NRInput -> NROutput -> [Double]
 gradF [] a y = map (2*) (zipWith (-) a y)
-gradF net a y = let wb = head net
+gradF net a y = let (wb:net_) = net
                     t = affineT wb a
                     sigvec' = fromList $ map sigmoid' t
                     sigMat' = diagonal 0 sigvec'
                     jt = transpose $ sigMat' `multStd` (weights wb)
-                    gF_ = gradF (tail net) (map sigmoid t) y
+                    a_ = activate wb a
+                    gF_ = gradF net_ a_ y
                 in jt `linearT` gF_
 
 
@@ -68,9 +70,17 @@ gradOmega :: Int -> NRInput -> Matrix Double
 gradOmega = fromLists .* replicate 
 
 gradW :: NRNetwork -> NRInput -> NROutput -> Matrix Double
-gradW net a y = let (wb:net_) = tail net
+gradW net a y = let (wb:net_) = net
                     a_ = activate wb a
                     gO = gradOmega (length a_) a
                     gF_ = gradF net_ a_ y
                  in mapPos (\(i,j) x -> x * (gF_ !! i) ) gO
+
+gradCx :: NRNetwork -> NRSample -> NRNetwork
+gradCx [] _ = []
+gradCx net Sample{input=a, expected=y} = let (wb:net_) = net
+                                             a_ = activate wb a
+                                             gW = gradW net a y
+                                             gB = gradF net_ a_ y
+                                         in  (Pass {weights=gW, biases=gB}:gradCx net_ (Sample a_ y) )
 
